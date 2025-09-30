@@ -1,64 +1,80 @@
 import os
+import uvicorn
+import shutil
 from dotenv import load_dotenv
+from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form
+from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.orm import Session
+import database as db
+from website_chat_router import chat_router
+from process_user_docs import process_user_document # <-- New Import
 
-# --- Load environment variables from .env file FIRST ---
-# This must be done before importing other modules that need the variables.
+# --- Load Environment Variables ---
 load_dotenv()
 
-from fastapi import FastAPI
-from fastapi.responses import JSONResponse
-import uvicorn
+# --- FastAPI App Initialization ---
+app = FastAPI()
 
-# Import routers from other modules
-from admin import admin_router
-#from whatsapp_adapter import whatsapp_router # <-- 1. This line must be active
-
-# Create the FastAPI application
-app = FastAPI(
-    title="Nutritionist AI Chatbot",
-    description="A customer service chatbot for a nutritionist company using RAG, FastAPI, and WhatsApp.",
-    version="1.0.0"
+# --- CORS Middleware ---
+origins = [
+    "http://localhost",
+    "http://localhost:8501", # Streamlit default port
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
-# --- Directory Setup ---
-# (This part of your file remains the same)
-@app.on_event("startup")
-async def startup_event():
+# --- Database Dependency ---
+def get_db():
+    database = db.SessionLocal()
+    try:
+        yield database
+    finally:
+        database.close()
+
+# --- API Routers ---
+app.include_router(chat_router, prefix="/chat", tags=["Chat"])
+
+# --- NEW: File Upload Endpoint ---
+@app.post("/upload_document/", tags=["Document Upload"])
+async def upload_document(user_id: str = Form(...), file: UploadFile = File(...)):
     """
-    Create necessary data directories on application startup.
+    Endpoint for clients to upload documents to train their personal bot.
     """
-    print("Application starting up...")
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    data_paths = {
-        "knowledge": os.path.join(base_dir, "data/knowledge"),
-        "promos": os.path.join(base_dir, "data/promos"),
-        "instructions": os.path.join(base_dir, "data/instructions"),
-        "sessions": os.path.join(base_dir, "data/sessions")
-    }
-    for name, path in data_paths.items():
-        if not os.path.exists(path):
-            print(f"Creating directory: {path}")
-            os.makedirs(path)
-    print("Startup complete. Data directories are ready.")
-
-
-# --- Include Routers ---
-app.include_router(admin_router, prefix="/admin", tags=["Admin"])
-#app.include_router(whatsapp_router, prefix="/whatsapp", tags=["WhatsApp"]) # <-- 2. This line must be active
-
+    # Create a temporary directory to store uploaded files
+    temp_dir = "temp_uploads"
+    os.makedirs(temp_dir, exist_ok=True)
+    
+    temp_filepath = os.path.join(temp_dir, file.filename)
+    
+    try:
+        # Save the uploaded file temporarily
+        with open(temp_filepath, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+            
+        # Process the document and add it to the user's knowledge base
+        process_user_document(user_id=user_id, filepath=temp_filepath)
+        
+        return {"status": "success", "filename": file.filename, "detail": "Document processed successfully."}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
+        
+    finally:
+        # Clean up the temporary file
+        if os.path.exists(temp_filepath):
+            os.remove(temp_filepath)
 
 # --- Root Endpoint ---
-@app.get("/", tags=["Root"])
-async def read_root():
-    """
-    Root endpoint for health check.
-    """
-    return JSONResponse(
-        content={"status": "ok", "message": "Welcome to the Nutritionist AI Chatbot API"}
-    )
+@app.get("/")
+def read_root():
+    return {"message": "Welcome to the Nutrition Chatbot API"}
 
 # --- Main Entry Point ---
 if __name__ == "__main__":
-    print("Starting Uvicorn server for development...")
-    uvicorn.run(app, host="0.0.0.0", port=8000)
-
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)

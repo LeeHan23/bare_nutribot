@@ -37,3 +37,10 @@ def get_llm():
         print(f"Error initializing ChatOpenAI model: {e}")
         # This will prevent the application from starting if the LLM can't be initialized
         raise
+def get_direct_llm_response(question: str) -> str:
+    """
+    Gets a direct response from the LLM wihtout RAG
+    """
+    llm = get_llm()
+    response = llm.predict(question)
+    return response

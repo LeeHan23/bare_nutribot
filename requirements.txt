@@ -15,7 +15,6 @@ streamlit
 langchain
 langchain-openai
 langchain-community
-langchain-community[all]
 langchain-chroma
 
 #--- Vector Store ---
@@ -27,6 +26,8 @@ pypdf
 docx2txt
 aiofiles
 pymupdf
+unstructured[local-inference]
+
 
 #--- WhatsApp & Session Management ---
 redis
