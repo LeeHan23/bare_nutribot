@@ -1,0 +1,32 @@
+#--- FastAPI and Server ---
+fastapi
+uvicorn[standard]
+gunicorn
+python-dotenv
+python-multipart
+argparse
+requests
+redis
+
+#--- Web UI ---
+streamlit
+
+#--- AI and Language Model ---
+langchain
+langchain-openai
+langchain-community
+langchain-community[all]
+langchain-chroma
+
+#--- Vector Store ---
+chromadb
+
+#--- Document Processing ---
+python-docx
+pypdf
+docx2txt
+aiofiles
+pymupdf
+
+#--- WhatsApp & Session Management ---
+redis
