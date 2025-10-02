@@ -1,4 +1,5 @@
 import os
+import re # <-- New Import
 from langchain.chains import ConversationalRetrievalChain
 from langchain.memory import ConversationBufferWindowMemory
 from langchain.prompts import PromptTemplate
@@ -8,6 +9,29 @@ from vector_store import get_retriever
 # --- Disease Configuration ---
 # Set the target disease for the chatbot here.
 TARGET_DISEASE = "Type 2 Diabetes"
+
+# --- Image Library Configuration --- 
+IMAGE_BASE_URL = "/data/images/"
+
+def find_image_url(query: str) -> str | None:
+    """
+    Finds an image URL based on a descriptive query.
+    This is a simple placeholder. You would build your real logic here.
+    """
+    # Simple keyword matching against a hypothetical library
+    query = query.lower().replace(" ", "_")
+    # Example: "a serving of rice" becomes "a_serving_of_rice"
+    # A real implementation would use a more robust search
+    image_map = {
+        "serving_of_rice": "serving_of_rice.jpg",
+        "serving_of_chicken": "serving_of_chicken.jpg",
+    }
+    for key, filename in image_map.items():
+        if key in query:
+            # In a real web app, this URL would point to a publicly accessible path
+            # For local Streamlit, you might need to handle file paths differently
+            return f"data/images/{filename}" 
+    return None
 
 # --- Hard-coded Behavior Template ---
 BEHAVIOR_TEMPLATE = f"""
@@ -66,6 +90,55 @@ RAG_FAILURE_PHRASES = [
     "I don't know", "I am not sure", "I cannot answer",
     "Sorry, I encountered an issue"
 ]
+
+def find_image_url(query: str) -> str | None:
+    """
+    Searches the data/images directory for the best matching image file
+    based on a descriptive query.
+    """
+    image_dir = os.path.join("data", "images")
+    if not os.path.exists(image_dir):
+        return None
+
+    # Simplify the query into keywords
+    query_words = set(query.lower().replace("serving of ", "").replace("of", "").replace("a", "").split())
+
+    best_match = None
+    highest_score = 0
+
+    # Search through all files in the image directory
+    for filename in os.listdir(image_dir):
+        # Simplify the filename into keywords for matching
+        file_words = set(filename.lower().replace(".png", "").replace(".jpg", "").replace("_", " ").split())
+        
+        # Score the match based on the number of overlapping keywords
+        score = len(query_words.intersection(file_words))
+        
+        if score > highest_score:
+            highest_score = score
+            best_match = os.path.join(image_dir, filename)
+
+    if highest_score > 1: # Require at least a few keywords to match
+        print(f"Image match found for query '{query}': {best_match}")
+        return best_match
+    
+    print(f"No suitable image match found for query: '{query}'")
+    return None
+
+
+def parse_response_for_image(text: str) -> dict:
+    """
+    Parses the LLM's text output to find an image request tag.
+    """
+    match = re.search(r"\[IMAGE:\s*(.*?)\]", text)
+    if match:
+        query = match.group(1).strip()
+        # Remove the tag from the text that will be displayed
+        cleaned_text = text.replace(match.group(0), "").strip()
+        image_url = find_image_url(query)
+        return {"answer": cleaned_text, "image_url": image_url}
+    else:
+        return {"answer": text, "image_url": None}
 
 def get_rag_response(question: str, user_id: str, chat_session_id: str) -> str:
     """

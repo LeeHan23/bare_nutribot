@@ -100,12 +100,16 @@ if st.session_state.logged_in:
                         }
                     )
                     if response.status_code == 200:
-                        answer = response.json().get("answer")
-                        st.markdown(answer)
+                        response_data = response.json()
+                        answer = response_data.get("answer")
+                        image_url = response_data.get("image_url") # <-- Get the image URL
+
+                        st.markdown(answer) # Display the text
+                        if image_url: # <-- If an image URL was sent
+                            st.image(image_url) # <-- Display the image!
+                    
                         st.session_state.messages.append({"role": "assistant", "content": answer})
                     else:
                         st.error("Failed to get a response from the bot.")
                 except requests.exceptions.RequestException as e:
                     st.error(f"Could not connect to the API: {e}")
-else:
-    st.info("Please log in to start chatting.")

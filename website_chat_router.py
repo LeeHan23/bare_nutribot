@@ -29,11 +29,11 @@ def get_chat_response(request: ChatRequest, database: Session = Depends(get_db))
         raise HTTPException(status_code=404, detail="User not found")
 
     try:
-        answer = rag.get_rag_response(
+        response_data = rag.get_rag_response(
             question=request.question,
             user_id=str(user.id),
             chat_session_id=request.session_id
         )
-        return {"answer": answer}
+        return response_data # <-- Return the whole dictionary
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

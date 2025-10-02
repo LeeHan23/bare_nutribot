@@ -27,7 +27,7 @@ docx2txt
 aiofiles
 pymupdf
 unstructured[local-inference]
-
+pdfminer.six
 
 #--- WhatsApp & Session Management ---
 redis
