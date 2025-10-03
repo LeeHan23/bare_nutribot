@@ -25,8 +25,9 @@ BASE_INDEX_DIR = os.path.join(PERSISTENT_DISK_PATH, "vectorstore_base")
 FILE_TRACKER_PATH = os.path.join(LOCAL_DATA_PATH, "file_tracker.json")
 COLLECTION_NAME = "base_knowledge"
 EMBEDDING_MODEL = "text-embedding-3-small"
-# Set the number of parallel workers. Good starting point is your number of CPU cores.
 MAX_WORKERS = os.cpu_count() or 4
+# NEW: Define a safe batch size for adding documents to ChromaDB
+DB_BATCH_SIZE = 4000 
 # =================================
 
 def load_processed_files_tracker():
@@ -92,7 +93,6 @@ def build_base_database():
     print(f"Detected {len(files_to_process)} new/updated documents. Starting parallel processing with {MAX_WORKERS} workers.")
     all_chunks = []
 
-    # Use a process pool to parallelize the CPU-bound task of parsing files.
     with ProcessPoolExecutor(max_workers=MAX_WORKERS) as executor:
         future_to_file = {executor.submit(process_single_file, filepath): filepath for filepath in files_to_process}
         for future in as_completed(future_to_file):
@@ -107,20 +107,23 @@ def build_base_database():
         print("No content was generated from the new files. Aborting update.")
         return
 
-    print(f"Generated {len(all_chunks)} new chunks. Now creating embeddings...")
+    print(f"Generated {len(all_chunks)} new chunks. Now creating embeddings and adding to the database in batches...")
 
-    # LangChain's OpenAIEmbeddings client is already optimized for batching.
-    # We add all chunks to ChromaDB at once, which is highly efficient.
     embedding_function = OpenAIEmbeddings(model=EMBEDDING_MODEL, max_retries=10)
     vector_store = Chroma(
         collection_name=COLLECTION_NAME,
         embedding_function=embedding_function,
         persist_directory=BASE_INDEX_DIR
     )
-    vector_store.add_documents(all_chunks)
+    
+    # --- UPDATED LOGIC: Add documents in batches ---
+    for i in range(0, len(all_chunks), DB_BATCH_SIZE):
+        batch = all_chunks[i:i + DB_BATCH_SIZE]
+        vector_store.add_documents(batch)
+        print(f"Added batch {i//DB_BATCH_SIZE + 1} of {len(all_chunks)//DB_BATCH_SIZE + 1} to the vector store.")
+    
     print(f"Successfully added {len(all_chunks)} new chunks to the vector store.")
 
-    # Update the file tracker
     for filepath in files_to_process:
         tracker[os.path.basename(filepath)] = os.path.getmtime(filepath)
     save_processed_files_tracker(tracker)

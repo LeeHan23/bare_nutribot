@@ -28,6 +28,7 @@ aiofiles
 pymupdf
 unstructured[local-inference]
 pdfminer.six
+openai>=1.3.0
 
 #--- WhatsApp & Session Management ---
 redis
