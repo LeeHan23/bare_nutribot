@@ -7,7 +7,7 @@ python-multipart
 argparse
 requests
 redis
-passlib[bcrypt]
+werkzeug
 
 #--- Web UI ---
 streamlit
