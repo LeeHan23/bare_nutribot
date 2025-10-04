@@ -1,9 +1,14 @@
 import streamlit as st
 import requests
 import uuid
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+import database as db # Import your database module
 
 # --- Configuration ---
-API_URL = "http://127.0.0.1:8000" # Replace with your actual API URL if different
+API_URL = "http://127.0.0.1:8000"
 
 # --- Page Configuration ---
 st.set_page_config(page_title="AI Nutrition Assistant", layout="wide")
@@ -17,27 +22,57 @@ if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
 if 'username' not in st.session_state:
     st.session_state.username = ""
+if 'view' not in st.session_state:
+    st.session_state.view = "login"
 
 # --- Main App UI ---
 st.title("🤖 AI Nutrition Assistant")
 st.sidebar.header("User Account")
 
-# --- Login / Signup Logic ---
 if not st.session_state.logged_in:
-    username = st.sidebar.text_input("Username", key="login_user")
-    password = st.sidebar.text_input("Password", type="password", key="login_pass")
-    
-    col1, col2 = st.sidebar.columns(2)
-    with col1:
-        if st.button("Login"):
-            # This is a placeholder. Implement actual login logic against your database.
-            st.session_state.logged_in = True 
-            st.session_state.username = username
-            st.rerun()
-    with col2:
-        if st.button("Sign Up"):
-            # Placeholder for signup logic
-            st.sidebar.success("Signup functionality to be implemented.")
+    db_session = db.SessionLocal()
+    try:
+        if st.session_state.view == "login":
+            username = st.sidebar.text_input("Username", key="login_user")
+            password = st.sidebar.text_input("Password", type="password", key="login_pass")
+            
+            if st.sidebar.button("Login"):
+                if db.check_login(db_session, username, password):
+                    st.session_state.logged_in = True
+                    st.session_state.username = username
+                    st.rerun()
+                else:
+                    st.sidebar.error("Invalid username or password.")
+
+            if st.sidebar.button("Go to Sign Up"):
+                st.session_state.view = "signup"
+                st.rerun()
+
+        elif st.session_state.view == "signup":
+            st.sidebar.header("Create New Account")
+            new_username = st.sidebar.text_input("New Username", key="signup_user")
+            new_password = st.sidebar.text_input("New Password", type="password", key="signup_pass")
+            confirm_password = st.sidebar.text_input("Confirm Password", type="password", key="signup_confirm")
+
+            if st.sidebar.button("Create Account"):
+                if not new_username or not new_password:
+                    st.sidebar.warning("Please enter all fields.")
+                elif new_password != confirm_password:
+                    st.sidebar.error("Passwords do not match.")
+                else:
+                    try:
+                        db.add_user(db_session, new_username, new_password)
+                        st.sidebar.success("Account created successfully! Please log in.")
+                        st.session_state.view = "login"
+                        st.rerun()
+                    except ValueError as e:
+                        st.sidebar.error(f"Error: {e}")
+
+            if st.sidebar.button("Back to Login"):
+                st.session_state.view = "login"
+                st.rerun()
+    finally:
+        db_session.close()
 
 else:
     st.sidebar.success(f"Logged in as: **{st.session_state.username}**")

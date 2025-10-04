@@ -1,119 +1,128 @@
 import streamlit as st
-import requests
-import os
-import asyncio
-import pandas as pd
+import uuid
 from dotenv import load_dotenv
 
+# Load environment variables
 load_dotenv()
-from rag import get_contextual_response
-# REMOVED: from agent_tools import get_all_customer_reports
-from database import add_user, check_login, verify_user, get_access_logs
 
-API_BASE_URL = "http://localhost:8000/admin"
-
-# --- Helper function for file uploads ---
-def upload_file(endpoint: str, file, file_type: str, metadata: dict):
-    files = {'file': (file.name, file, file.type)}
-    try:
-        response = requests.post(f"{API_BASE_URL}/{endpoint}", files=files, data=metadata)
-        response.raise_for_status()
-        st.success(f"{file_type} file '{file.name}' uploaded successfully!")
-    except requests.exceptions.RequestException as e:
-        st.error(f"Error uploading file: {e}")
-        if e.response: st.error(f"Server responded with: {e.response.text}")
+# Import necessary functions from your project files
+from rag import get_rag_response
+import database as db
 
 st.set_page_config(page_title="Chatbot Admin Panel", layout="wide")
 
-# (Login and Sign-up logic remains the same)
+# --- Session State Initialization ---
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
     st.session_state.username = ""
-    st.session_state.show_verification = False
-    st.session_state.verification_key = ""
+    st.session_state.view = "login"
 
+# --- UI Rendering ---
 st.sidebar.title("Admin Access")
+
 if not st.session_state.logged_in:
-    # (Login form remains the same)
-    pass # Placeholder for existing login UI code
+    db_session = db.SessionLocal()
+    try:
+        if st.session_state.view == "login":
+            st.sidebar.header("Login")
+            username = st.sidebar.text_input("Username", key="login_user")
+            password = st.sidebar.text_input("Password", type="password", key="login_pass")
+
+            if st.sidebar.button("Login"):
+                if db.check_login(db_session, username, password):
+                    st.session_state.logged_in = True
+                    st.session_state.username = username
+                    st.session_state.view = "main"
+                    st.rerun()
+                else:
+                    st.sidebar.error("Invalid username or password.")
+            
+            if st.sidebar.button("Go to Sign Up"):
+                st.session_state.view = "signup"
+                st.rerun()
+
+        elif st.session_state.view == "signup":
+            st.sidebar.header("Create New Admin Account")
+            new_username = st.sidebar.text_input("New Username", key="signup_user")
+            new_password = st.sidebar.text_input("New Password", type="password", key="signup_pass")
+            confirm_password = st.sidebar.text_input("Confirm Password", type="password", key="signup_confirm")
+
+            if st.sidebar.button("Create Account"):
+                if not new_username or not new_password:
+                    st.sidebar.warning("Please enter a username and password.")
+                elif new_password != confirm_password:
+                    st.sidebar.error("Passwords do not match.")
+                else:
+                    try:
+                        db.add_user(db_session, new_username, new_password)
+                        st.sidebar.success("Account created successfully! Please go back to log in.")
+                    except ValueError as e:
+                        st.sidebar.error(f"Error: {e}")
+                    except Exception as e:
+                        st.sidebar.error(f"An unexpected error occurred.")
+
+            if st.sidebar.button("Back to Login"):
+                st.session_state.view = "login"
+                st.rerun()
+    finally:
+        db_session.close()
+
 else:
+    # --- Main Application View (after login) ---
     st.sidebar.success(f"Logged in as **{st.session_state.username}**")
     if st.sidebar.button("Logout"):
-        # (Logout logic remains the same)
+        st.session_state.logged_in = False
+        st.session_state.username = ""
+        st.session_state.view = "login"
         st.rerun()
 
-    st.header("Chatbot Management Dashboard")
+    # (The rest of your admin UI chat interface code goes here)
+    st.header("💬 Test the RAG Chatbot")
+    st.info("Interact with the chatbot as a test user to verify its responses and knowledge.")
 
-    # --- Simplified Tabs ---
-    tab1, tab3, tab4 = st.tabs(["📚 Knowledge Base", "💬 Chat Testing", "🔐 Security & Access Logs"])
+    # Initialize chat state
+    if 'admin_messages' not in st.session_state:
+        st.session_state.admin_messages = []
+    if 'admin_session_id' not in st.session_state:
+        st.session_state.admin_session_id = f"admin_session_{uuid.uuid4()}"
 
-    with tab1:
-        st.header("📚 Foundational Knowledge Base Management")
-        st.info("Upload .docx files here to build or update the core knowledge for all users.")
-        
-        uploaded_knowledge_files = st.file_uploader(
-            "Upload Foundational Documents",
-            accept_multiple_files=True,
-            type=['docx'],
-            key="knowledge_uploader"
-        )
-        
-        if st.button("Process Foundational Files"):
-            if uploaded_knowledge_files:
-                with st.spinner("Processing files... This may take a while."):
-                    for file in uploaded_knowledge_files:
-                        # This assumes an endpoint exists to handle foundational knowledge.
-                        # You would build this similar to the user-level upload.
-                        upload_file("upload_base_document", file, "Knowledge", {})
-            else:
-                st.warning("Please upload at least one document.")
+    # Display chat history
+    for message in st.session_state.admin_messages:
+        with st.chat_message(message["role"]):
+            st.write(message["content"])
+            if "image_url" in message and message["image_url"]:
+                st.image(message["image_url"])
 
-    with tab3:
-        st.header("💬 Test the RAG Chatbot")
-        st.info("Interact with the chatbot as a test user to verify its responses and knowledge.")
-        
-        # (Chat testing UI remains the same)
-        TEST_CUSTOMER_ID = "admin_test_customer"
-        test_user_id = st.text_input("Enter a Test User ID (e.g., 'user123')", value="test_user")
+    # Chat input
+    if prompt := st.chat_input("Ask the bot a question..."):
+        st.chat_message("user").write(prompt)
+        st.session_state.admin_messages.append({"role": "user", "content": prompt})
 
-        if 'admin_messages' not in st.session_state:
-            st.session_state.admin_messages = []
+        with st.chat_message("assistant"):
+            with st.spinner("Getting response..."):
+                response_data = get_rag_response(
+                    question=prompt,
+                    user_id="admin_test_user",
+                    chat_session_id=st.session_state.admin_session_id
+                )
+                
+                answer = response_data.get("answer", "I'm sorry, an error occurred.")
+                image_url = response_data.get("image_url")
 
-        for message in st.session_state.admin_messages:
-            with st.chat_message(message["role"]):
-                st.write(message["content"])
+                st.write(answer)
+                if image_url:
+                    st.image(image_url)
+                
+                st.session_state.admin_messages.append({
+                    "role": "assistant", 
+                    "content": answer,
+                    "image_url": image_url
+                })
 
-        if prompt := st.chat_input("Ask the bot a question..."):
-            st.chat_message("user").write(prompt)
-            st.session_state.admin_messages.append({"role": "user", "content": prompt})
-
-            with st.chat_message("assistant"):
-                with st.spinner("Getting response..."):
-                    chat_history = [msg for msg in st.session_state.admin_messages if isinstance(msg, dict)]
-                    response_data = asyncio.run(get_contextual_response(prompt, chat_history, test_user_id, TEST_CUSTOMER_ID))
-                    response_text = response_data.get("answer", "I'm sorry, an error occurred.")
-                    st.write(response_text)
-                    sources = response_data.get("sources", [])
-                    if sources:
-                        with st.expander("View Sources"):
-                            for source in sources:
-                                source_name = os.path.basename(source.metadata.get('source', 'Unknown'))
-                                st.info(f"Source: {source_name}, Page: {source.metadata.get('page', 'N/A')}")
-                                st.caption(f"> {source.page_content[:250]}...")
-            st.session_state.admin_messages.append({"role": "assistant", "content": response_text})
-
-    with tab4:
-        st.header("🔐 Security & Access Logs")
-        # (Content remains the same)
-        if st.button("Refresh Logs"):
-            st.rerun()
-        logs = get_access_logs()
-        if logs:
-            df = pd.DataFrame(logs, columns=["Username", "Timestamp", "Status"])
-            st.dataframe(df, use_container_width=True)
-        else:
-            st.info("No access attempts have been logged yet.")
-
-if not st.session_state.logged_in:
-    st.title("Welcome to the Chatbot Admin Panel")
-    st.header("Please log in or sign up using the sidebar to continue.")
+# Initial view for non-logged-in users
+if not st.session_state.logged_in and st.session_state.view == "login":
+     st.title("Welcome to the Chatbot Admin Panel")
+     st.header("Please log in or sign up using the sidebar to continue.")
+elif not st.session_state.logged_in and st.session_state.view == "signup":
+     st.title("Create an Admin Account")
+     st.header("Please fill out the form in the sidebar.")

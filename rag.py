@@ -3,7 +3,7 @@ import re # <-- New Import
 from langchain.chains import ConversationalRetrievalChain
 from langchain.memory import ConversationBufferWindowMemory
 from langchain.prompts import PromptTemplate
-from llm import get_chat_llm, get_direct_llm_response
+from llm import get_llm, get_direct_llm_response
 from vector_store import get_retriever
 
 # --- Disease Configuration ---
@@ -144,7 +144,7 @@ def get_rag_response(question: str, user_id: str, chat_session_id: str) -> str:
     """
     Generates a response using the RAG chain with a hard-coded behavior prompt.
     """
-    llm = get_chat_llm()
+    llm = get_llm()
     retriever = get_retriever(user_id=user_id)
 
     memory = ConversationBufferWindowMemory(
